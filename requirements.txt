@@ -1,0 +1,7 @@
+jupyterlab==3.0.14
+pymc3==3.11.2
+numpy==1.20.2
+scikit-learn==0.24.1
+pandas==1.2.4
+seaborn==0.11.1
+arviz==0.11.2
