@@ -8,7 +8,7 @@ stages:
     executable_module_path: serve_model.py
     requirements:
       - arviz==0.11.2
-      - botocore==1.20.60
+      - boto3==1.17.60
       - fastapi==0.63.0
       - joblib==1.0.1
       - numpy==1.20.2
@@ -17,7 +17,7 @@ stages:
     cpu_request: 1.0
     memory_request_mb: 500
     service:
-      max_startup_time_seconds: 30
+      max_startup_time_seconds: 60
       replicas: 2
       port: 8000
       ingress: true
