@@ -1,213 +1,197 @@
-# Scikit-Learn, meet Production
+# Serving Uncertainty
 
-> “*Deploying something useless into production, as soon as you can, is the right way to start a new project. It pulls unknown risk forward, opens up parallel streams of work, and establishes good habits.*”
+Most Machine Learning (ML) models return a point-estimate of the most likely data label, given an instance of feature data. There are many scenarios, however, where a point-estimate is not enough - where there is need to understand the model's uncertainty in the prediction. For example, when assessing risk, or more generally, when making decisions to optimise some organisational-level cost (or utility) function. This need is particularly acute when the cost is a non-linear function of the variable you're trying to predict.
 
-This is a quote by [Pete Hodgson](https://blog.thepete.net/blog/2019/10/04/hello-production/), from his article ‘Hello, production’.  It in a nutshell, it explains the benefits of taking deployment pains early on in a software development project, and then using the initial deployment skeleton as the basis for rapidly delivering useful functionality into production.
+For these scenarios, 'traditional' statistical modelling can provide access to the distribution of predicted labels, but these approaches are hard to scale and built upon assumptions that are often invalidated by the data they're trying to model. Alternatively, it is possible to train additional ML models for predicting specific quantiles, through the use of [quantile loss functions](https://towardsdatascience.com/quantile-regression-from-linear-models-to-trees-to-deep-learning-af3738b527c3), but this requires training one new model for every quantile you need to predict, which is inefficient.
 
-The idea of making an initial ‘Hello, production’ release has had a big influence on how we think about the development of machine learning systems. We’ve mapped ‘Hello, Production’ into the machine learning space, as follows,
+Half-way between statistics and ML we have probabilistic programming, rooted in the methods of Bayesian inference. This notebook demonstrates how to train such a predictive model using [PyMC3](https://docs.pymc.io) - a Probabilistic Programming Language (PPL) for Python. We will demonstrate how a single probabilistic program can be used to support requests for point-estimates, arbitrary uncertainty ranges, as well as entire distributions of predicted data labels, for a non-trivial regression task.
 
-> *Train the simplest model conceivable and deploy it into production, as soon as you can.*
+We will then demonstrate how to use [FastAPI](https://fastapi.tiangolo.com) to develop a web API service, that exposes a separate endpoint for each type of prediction request: point, interval and density. Finally, we will walk you through how to deploy the service to Kubernetes, using [Bodywork](https://github.com/bodywork-ml/bodywork-core).
 
-A reasonable ‘Hello, production’ model could be one that returns the most frequent class (for classification tasks), or the mean value (for regression tasks).  Scikit-Learn provides models for precisely this situation, in the `sklearn.dummy` sub-module. If the end-goal is to serve predictions via a web API, then the next step is to develop the server and deploy it into a production environment. Alternatively, if the model is going to be used as part of a batch job, then the next step is to develop the job and deploy that into production.
+All of the files used in this project can be found in the [bodywork-pymc3-project](https://github.com/bodywork-ml/bodywork-pymc3-project) repository on GitHub. You can use this repo, together with this guide, to train the model and then deploy the web API to a Kubernetes cluster. Alternatively, you can use this repo as a template for deploying your own machine learning projects. If you're new to Kubernetes, then don't worry - we've got you covered - read on.
 
-The advantage of following this process, is that is forces you to confront the following issues early on:
+## Machine Learning Lifecycle
 
-- Getting access to data.
-- Getting access to (or creating) production environments.
-- Defining the contract (or interface) with the consumers of the model’s output.
-- Creating deployment pipelines (manual or automated), to deliver your application into production.
+<div align="center">
+<img src="https://bodywork-media.s3.eu-west-2.amazonaws.com/bodywork-pymc3-project-lifecycle.png"/>
+</div>
 
-Each one of these issues is likely to involve input from people in other teams and is critical to overall success. Failure on any one of these can signal the end for a machine learning project, regardless of how well the models are performing. Success also demonstrates an ability to deliver functional software, which in our experience creates trust in a project, and often leads to more time being made available to experiment with training more complex model types.
+We are going to recommend that the model is trained using the code in the [train_model.ipynb](https://github.com/bodywork-ml/bodywork-pymc3-project/blob/main/train_model.ipynb) notebook, which will persist all ML build artefacts to cloud object storage (AWS S3). We will then use [Bodywork](https://github.com/bodywork-ml/bodywork-core) to deploy the web API defined in the [serve_model.py](https://github.com/bodywork-ml/bodywork-pymc3-project/blob/main/serve_model.py) module, directly from this GitHub repo. This process should begin as a manual one, and once confidence in this process is establish, re-training can be automated by using Bodywork to deploy a two-stage train-and-serve pipeline that runs on a schedule - e.g., as demonstrated [here](https://bodywork.readthedocs.io/en/latest/quickstart_ml_pipeline/).
 
-Bodywork is laser-focused on making the deployment of machine learning projects, to Kubernetes, quick and easy. In what follows, we are going to show you how to use Bodywork to deploy a ‘Hello, production’ release for a hypothetical prediction service, using Scikit-Learn and FastAPI. We claim that it will take your under 15 minutes to work through the steps below, which includes setting-up a local Kubernetes cluster for testing.
+## A (very) Quick Introduction to Bayesian Inference
 
-## Step 0 - Before we get Started
+Like statistical data analysis (and ML to some extent), the main aim of Bayesian inference is to infer the unknown parameters in a model of the observed data. For example, to test a hypotheses about the physical processes that lead to the observations. Bayesian inference deviates from traditional statistics - on a practical level - because it explicitly integrates prior knowledge regarding the uncertainty of the model parameters, into the statistical inference process. To this end, Bayesian inference focuses on the posterior distribution,
 
-Deploying machine learning projects using Bodywork requires you to have a [GitHub](https://github.com) account, Python 3.8 installed on your local machine and access to a [Kubernetes](https://en.wikipedia.org/wiki/Kubernetes) cluster. If you already have access to Kubernetes, then skip to Step 1, otherwise read-on to setup a single node Kubernetes cluster on your local machine, using Minikube.
+$$
+p(\Theta | X) = \frac{p(X | \Theta) \cdot p(\Theta)}{p(X)}
+$$
 
-### Minikube - Kubernetes for your Laptop
+Where,
 
-If you don’t have access to a Kubernetes cluster, then an easy way to get started is with [Minikube](https://minikube.sigs.k8s.io/docs/). If you are running on MacOS and with the [Homebrew](https://brew.sh) package manager available, then installing Minikube is as simple as running,
+- $\Theta$ is the vector of unknown model parameters, that we wish to estimate;
+- $X$ is the vector of observed data;
+- $p(X | \Theta)$ is the likelihood function, that models the probability of observing the data for a fixed choice of parameters; and,
+- $p(\Theta)$ is the prior distribution of the model parameters.
 
-```shell
-$ brew install minikube
-```
+The unknown model parameters are not limited to regression coefficients - Deep Neural Networks (DNNs) can be trained using Bayesian inference and PPLs, as an alternative to gradient descent - e.g., see the article by [Thomas Wiecki](https://twiecki.io/blog/2016/06/01/bayesian-deep-learning/).
 
-If you’re running on Windows or Linux, then see the appropriate [installation instructions](https://minikube.sigs.k8s.io/docs/start/).
+If you're interested in learning more about Bayesian data analysis and inference, then an **excellent** (inspirational) and practical introduction is [Statistical Rethinking by Richard McElreath](https://xcelab.net/rm/statistical-rethinking/). For a more theoretical treatment try [Bayesian Data Analysis by Gelman & co.](http://www.stat.columbia.edu/~gelman/book/). If you're curious, read on!
 
-Once you have Minikube installed, start a cluster using the latest version of Kubernetes that Bodywork supports,
+## Running the Project Locally
 
-```shell
-$ minikube start --kubernetes-version=v1.16.15
-```
+To be able to run everything discussed below, clone the GitHub repo, create a new virtual environment and install the required packages,
 
-And then enable ingress, so we can route HTTP requests to services deployed using Bodywork.
-
-```she’ll
-$ minikube addons enable ingress
-```
-
-You’ll also need the cluster’s IP address, which you can get using,
-
-```shell
-$ minikube profile list
-|----------|-----------|---------|--------------|------|----------|---------|-------|
-| Profile  | VM Driver | Runtime |      IP      | Port | Version  | Status  | Nodes |
-|----------|-----------|---------|--------------|------|----------|---------|-------|
-| minikube | hyperkit  | docker  | 192.168.64.5 | 8443 | v1.16.15 | Running |     1 |
-|----------|-----------|---------|--------------|------|----------|---------|-------|
-```
-
-When you’re done with this tutorial, the cluster can be powered-down using.
-
-```shell
-$ minikube stop
-```
-
-## Step 1 - Create a new GitHub Repository for the Project
-
-Head over to GitHub and create a new public repository for this project - we called ours [bodywork-scikit-fastapi-project](https://github.com/bodywork-ml/bodywork-scikit-fastapi-project). If you want to use Bodywork with private repos, you’ll have to configure Bodywork to authenticate with GitHub via SSH. The [Bodywork User Guide](https://bodywork.readthedocs.io/en/latest/user_guide/#working-with-private-git-repositories-using-ssh) contains details on how to do this, but we recommend that you come back to this at a later date and continue with a public repository for now.
-
-Next, clone your new repository locally,
-
-```shell
-$ git clone https://github.com/bodywork-ml/bodywork-scikit-fastapi-project.git
-```
-
-Create a dedicated Python 3.8 virtual environment in the root directory, and the activate it,
-
-```shell
-$ cd bodywork-scikit-fastapi-project
+```text
+$ git clone https://github.com/bodywork-ml/bodywork-pymc3-project.git
+$ cd bodywork-pymc3-project
 $ python3.8 -m venv .venv
 $ source .venv/bin/activate
+$ pip install -r requirements.txt
 ```
 
-Finally, install the packages required for this project, as shown below,
+### Getting Started with Kubernetes
 
-```shell
-$ pip install \
-    bodywork==2.0.2 \
-	scikit-learn==0.24.1 \
-	numpy==1.20.2 \
-	joblib==1.0.1 \
-	fastapi==0.63.0 \
-	uvicorn==0.13.4 
-```
+If you have never worked with Kubernetes before, then please don't stop here. We have written a guide to [Getting Started with Kubernetes for MLOps](https://bodywork.readthedocs.io/en/latest/kubernetes/#getting-started-with-kubernetes), that will explain the basic concepts and have you up-and-running with a single-node cluster on your machine, in under 10 minutes.
 
-Then open-up an IDE to continue developing the service.
+Should you want to deploy to a cloud-based cluster in the future, you need only to follow the same steps while pointing to your new cluster. This is one of the key advantages of Kubernetes - you can test locally with confidence that your production deployments will behave in the same way.
 
-## Step 2 - Train a Dummy Model
+## Training the Model using PyMC3
 
-We want to demonstrate a ‘Hello, production’ release, so we’ll train a Scikit-Learn `DummyRegressor`, configured to return the mean value of the labels in a training dataset, regardless of the feature data passed to it. This will still require you to acquire some data, one way or another.
+A complete Bayesian modelling workflow is executed in details, within [train_model.ipynb](https://github.com/bodywork-ml/bodywork-pymc3-project/blob/main/train_model.ipynb). We summarise the steps in this notebook as follows,
 
-For the purposes of this article, we have opted to create a synthetic one-dimensional regression dataset, where the only feature, `X`, has a 42% correlation with the labels, `y`, and both features and labels are [distributed normally](https://en.wikipedia.org/wiki/Normal_distribution). We have added this step to our training script, `train_model.py`, reproduced below. When you run the training script, it will train a `DummyRegressor` and save it in the project’s root directory as `dummy_model.joblib`.
+- TODO - describe synthetic data
+- TODO - describe model
+- TODO - demonstrate predictions.
 
-Beyond use in ‘Hello, production’ releases, models such as this represent the most basic benchmark that any more sophisticated model type must out-perform - which is why the script also persists the model metrics in `dummy_model_metrics.txt`, for comparisons with future iterations.
+## Engineering the Web API using FastAPI
+
+The ultimate aim of this tutorial, is to serve predictions from a probabilistic program, via a web API with multiple endpoints. This is achieved in a Python module we’ve named [serve_model.py](https://github.com/bodywork-ml/bodywork-pymc3-project/blob/main/serve_model.py), parts of which will be reproduced below.
+
+This module loads the trained model that is persisted to cloud object storage when [train_model.ipynb](https://github.com/bodywork-ml/bodywork-pymc3-project/blob/main/train_model.ipynb) is run. Then, it configures [FastAPI](https://fastapi.tiangolo.com) to start a server with HTTP endpoints at:
+
+- **/predict/v1.0.0/point** - for return point-estimates.
+- **/predict/v1.0.0/interval** - for returning highest density intervals.
+- **/predict/v1.0.0/density** - for returning the probability density (in discrete bins).
+
+These endpoints are defined in the following functions (refer to [serve_model.py](https://github.com/bodywork-ml/bodywork-pymc3-project/blob/main/serve_model.py) for complete details),
 
 ```python
-import joblib
-import numpy as np
-from sklearn.dummy import DummyRegressor
-from sklearn.metrics import mean_squared_error
-from sklearn.model_selection import train_test_split
+@app.post("/predict/v1.0.0/point", status_code=200)
+def predict_point_estimate(request: PointPredictionRequest):
+    """Return point-estimate prediction."""
+    y_pred_samples = generate_label_samples(
+        request.data.x, request.data.category, request.algo_param.n_samples
+    )
+    y_pred = np.median(y_pred_samples)
+    return {"y_pred": y_pred, "algo_param": request.algo_param.n_samples}
 
-# create dummy regression data
-n_observations = 1000
-np.random.seed(42)
-X = np.random.randn(n_observations)
-y = 0.42 * X + np.sqrt(1 - 0.42 * 0.42) * np.random.randn(n_observations)
 
-# train dummy model
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.1, random_state=42)
-dummy_model = DummyRegressor(strategy='mean')
-dummy_model.fit(X_train, y_train)
+@app.post("/predict/v1.0.0/interval", status_code=200)
+def predict_interval(request: IntervalPredictionRequest):
+    """Return point-estimate prediction."""
+    y_pred_samples = generate_label_samples(
+        request.data.x, request.data.category, request.algo_param.n_samples
+    )
+    y_hdi = pm.hdi(y_pred_samples, request.hdi_probability)
+    return {
+        "y_pred_lower": y_hdi[0],
+        "y_pred_upper": y_hdi[1],
+        "algo_param": request.algo_param.n_samples,
+    }
 
-# compute dummy model metrics
-mse = mean_squared_error(y_test, dummy_model.predict(X_test))
 
-# persist dummy model and metrics
-joblib.dump(dummy_model, 'dummy_model.joblib')
-with open('dummy_model_metrics.txt', 'w') as f:
-    f.write(f'mean_squared_error: {mse}\n')
+@app.post("/predict/v1.0.0/density", status_code=200)
+def predict_density(request: DensityPredictionRequest):
+    """Return density prediction."""
+    y_pred_samples = generate_label_samples(
+        request.data.x, request.data.category, request.algo_param.n_samples
+    )
+    y_pred_density, bin_edges = np.histogram(
+        y_pred_samples, bins=request.bins, density=True
+    )
+    bin_mids = 0.5 * (bin_edges[:-1] + bin_edges[1:])
+    return {
+        "y_pred_bin_mids": bin_mids.tolist(),
+        "y_pred_density": y_pred_density.tolist(),
+        "algo_param": request.algo_param.n_samples,
+    }
 ```
 
-## Step 3 - Develop a web API using FastAPI
-
-The ultimate aim for our chosen machine learning system, is to serve predictions via a web API. Consequently, our initial ‘Hello, production’ release will need us to develop a skeleton web service that exposes the dummy model trained in Step 2. This is achieved in a Python module we’ve named `serve_model.py` , reproduced below, which you should also add to your project.
-
-This module loads the trained model created in Step 2 and then configures [FastAPI](https://fastapi.tiangolo.com) to start a server with an HTTP endpoint at `/api/v1/`. Instances of data, serialised as JSON,  can be sent to this endpoint as HTTP POST requests. The schema for the JSON data payload is defined by the `FeatureDataInstanace` class, which for our example only expects a single `float` field named `X`. For more information on defining JSON schemas using Pydantic and FastAPI, see the [FastAPI docs](https://fastapi.tiangolo.com/tutorial/body/).
+Instances of data, serialised as JSON, can be sent to these endpoints as HTTP POST requests. The schema for the JSON data payload are defined by the classes that inherit from `pydantic.BaseModel`, as reproduced below.
 
 ```python
-import joblib
-import uvicorn
-from fastapi import FastAPI
-from pydantic import BaseModel
-
-app = FastAPI(debug=False)
-
-
 class FeatureDataInstance(BaseModel):
-    """Define JSON data schema for prediction requests."""
-    X: float
+    """Pydantic schema for instances of feature data."""
+
+    x: float
+    category: int
 
 
-@app.post('/api/v1/', status_code=200)
-def predict(data: FeatureDataInstance):
-    """Generate predictions for data sent to the /api/v1/ route."""
-    prediction = model.predict([data.X])
-    return {'y_pred': prediction[0]}
+class AlgoParam(BaseModel):
+    """Pydantic schema for algorithm config."""
+
+    n_samples: int = Field(N_PREDICTION_SAMPLES, gt=0)
 
 
-if __name__ == '__main__':
-    model = joblib.load('dummy_model.joblib')
-    uvicorn.run(app, host='0.0.0.0', workers=1)
+class PointPredictionRequest(BaseModel):
+    """Pydantic schema for point-estimate requests."""
+
+    data: FeatureDataInstance
+    algo_param: AlgoParam = AlgoParam()
+
+
+class IntervalPredictionRequest(BaseModel):
+    """Pydantic schema for interval requests."""
+
+    data: FeatureDataInstance
+    hdi_probability: float = Field(0.95, gt=0, lt=1)
+    algo_param: AlgoParam = AlgoParam()
+
+
+class DensityPredictionRequest(BaseModel):
+    """Pydantic schema for density requests."""
+
+    data: FeatureDataInstance
+    bins: int = Field(5, gt=0)
+    algo_param: AlgoParam = AlgoParam()
+
 ```
 
-Test the service locally by running `serve_model.py` ,
+For more information on defining JSON schemas using Pydantic and FastAPI, see the [FastAPI docs](https://fastapi.tiangolo.com/tutorial/body/).
 
-```shell
-$ python serve_model.py
-INFO:     Started server process [51987]
-INFO:     Waiting for application startup.
-INFO:     Application startup complete.
-INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
-```
+## Testing the web API Locally
 
-And then in a new terminal, send the endpoint some data using `curl`,
+TODO
 
-```shell
-$ curl http://localhost:8000/predict/v1/ \
-    --request POST \
-    --header "Content-Type: application/json" \
-    --data '{"X": 42}'
-{"y_pred":-0.0032494670211433195}
-```
+## Configuring the Deployment
 
-Which confirms that the service is working as expected.
-
-## Step 4 - Configure Deployment
-
-All configuration for Bodywork deployments must be kept in a [YAML](https://en.wikipedia.org/wiki/YAML) file, named `bodywork.yaml` and stored in the project’s root directory.  The `bodywork.yaml` required to deploy our ‘Hello, production’ release is reproduced below - add this file to your project.
+All configuration for Bodywork deployments must be kept in a [YAML](https://en.wikipedia.org/wiki/YAML) file, named `bodywork.yaml` and stored in the project’s root directory.  The `bodywork.yaml` required to deploy our web API is reproduced below.
 
 ```yaml
 version: "1.0"
 project:
-  name: bodywork-scikit-fastapi-project
+  name: bodywork-pymc3-project
   docker_image: bodyworkml/bodywork-core:latest
   DAG: scoring-service
 stages:
   scoring-service:
     executable_module_path: serve_model.py
     requirements:
+      - arviz==0.11.2
+      - boto3==1.17.60
       - fastapi==0.63.0
       - joblib==1.0.1
       - numpy==1.20.2
-      - scikit-learn==0.24.1
+      - pymc3==3.11.2
       - uvicorn==0.13.4
-    cpu_request: 0.5
-    memory_request_mb: 100
+    secrets:
+      AWS_ACCESS_KEY_ID: aws-credentials
+      AWS_SECRET_ACCESS_KEY: aws-credentials
+      AWS_DEFAULT_REGION: aws-credentials
+    cpu_request: 1.0
+    memory_request_mb: 500
     service:
-      max_startup_time_seconds: 30
+      max_startup_time_seconds: 60
       replicas: 1
       port: 8000
       ingress: true
@@ -224,66 +208,55 @@ Bodywork will interpret this file as follows:
 
 Refer to the [Bodywork User Guide](https://bodywork.readthedocs.io/en/latest/user_guide/#user-guide) for a complete discussion of all the options available for deploying machine learning systems using Bodywork.
 
-## Step 5 - Commit Files and Push to GitHub
-
-The project is now ready to deploy, so the files must be committed and pushed to the remote repository we created on GitHub.
-
-```shell
-$ git add -A
-$ git commit -m "Initial commit."
-$ git push origin main
-```
-
-When triggered, Bodywork will clone the remote repository directly from GitHub, analyse the configuration in `bodywork.yaml` and then execute the deployment plan contained within it.
-
-## Step 6 - Deploy to Kubernetes
+## Deploying the Prediction Service
 
 The first thing we need to do, is to create and setup a Kubernetes [namespace](https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/) for our deployment. A namespace can be thought of as a virtual cluster (within the cluster), where related resources can be grouped together. Use the Bodywork CLI to do this,
 
-```shell
-$ bodywork setup-namespace bodyworkml
+```text
+bodywork setup-namespace pymc
 ```
 
-The easiest way to run your first deployment, is to execute the Bodywork workflow-controller locally,
+TODO
 
-```shell
-$ bodywork workflow \
-    --namespace=bodyworkml \
-    https://github.com/bodywork-ml/bodywork-scikit-fastapi-project.git \
-    main
+```text
+$ bodywork secret create \
+    --namespace=pymc \
+    --name=aws-credentials \
+    --data AWS_ACCESS_KEY_ID=XX AWS_SECRET_ACCESS_KEY=XX AWS_DEFAULT_REGION=XX
 ```
 
-This will orchestrate deployment on your cluster and stream the logs to your terminal. Refer to the [Bodywork User guide](https://bodywork.readthedocs.io/en/latest/user_guide/#deploying-workflows)  to run the workflow-controller remotely.
+The, execute the deployment using,
 
-## Step 7 - Test the Prediction API
-
-Once the deployment has completed, the prediction service will be ready for testing. Bodywork will create ingress routes to your endpoint using the following scheme:
-
-```md
-/K8S_NAMESPACE/PROJECT_NAME--STAGE_NAME/
+```text
+$ bodywork deployment create \
+    --namespace=pymc \
+    --name=initial-deployment \
+    --git-repo-url=https://github.com/bodywork-ml/bodywork-pymc3-project \
+    --git-repo-branch=main
 ```
 
-Such that we can make a request for a prediction using,
+Use the kubectl to check if the deployment job has completed,
 
-```shell
-$ curl http://CLUSTER_IP/bodyworkml/bodywork-scikit-fastapi-project--scoring-service/api/v1/ \
+```text
+$ kubectl -n pymc get jobs
+
+NAME              COMPLETIONS   DURATION   AGE
+initial-deployment   1/1           69s        2m
+```
+
+Now test the service is responding,
+
+```text
+$ curl http://YOU_CLUSTER_IP/pymc/bodywork-pymc3-project--scoring-service/predict/v1.0.0/point \
     --request POST \
     --header "Content-Type: application/json" \
-    --data '{"X": 42}'
+    --data '{"data": {"x": 5, "category": 2}}'
 
-{"y_pred": 0.0781994319124968}
+{
+  "y_pred_lower": 5.997068122059717,
+  "y_pred_upper": 8.67981161246493,
+  "algo_param": 100
+}
 ```
 
-Returning the same value we got when testing the service earlier on. Congratulations, you have just deployed your ‘Hello, production’ release!
-
-## Where to go from here
-
-If you used Minikube to test Bodywork locally, then the next logical step would be to deploy to a remote Kubernetes cluster. There are many options for creating managed Kubernetes clusters in the cloud - see [our recommendations](https://bodywork.readthedocs.io/en/latest/kubernetes/#managed-kubernetes-services)
-
-If a web service isn’t a suitable ‘Hello, production’ release for your project, then check out the [Deployment Templates](https://bodywork.readthedocs.io/en/latest/template_projects/) for other project types that may be a better fit - e.g. batch jobs or Jupyter notebook pipelines.
-
-When your ‘Hello, production’ release is operational and available within your organisation, it’s then time to start thinking about monitoring your service and collecting data to enable the training of the next iteration. Godspeed!
-
-## Getting Help
-
-If you run into any trouble, then don't hesitate to ask a question on our [discussion board](https://github.com/bodywork-ml/bodywork-core/discussions) and we'll step-in to help you out.
+Returning the same value we got when testing the service locally. Congratulations - you have just deployed a probabilistic program ready for production.

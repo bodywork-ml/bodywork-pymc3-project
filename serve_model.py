@@ -18,8 +18,8 @@ from fastapi import FastAPI
 from pydantic import BaseModel, Field
 
 AWS_S3_BUCKET_NAME = "bodywork-pymc3-project"
-MODEL_DEFINITION_BUCKET_PATH = "models/model_definition.joblib"
-INFERENCE_DATA_BUCKET_PATH = "inference_data/model_inference.nc"
+MODEL_DEFINITION_BUCKET_PATH = "models/pymc.joblib"
+INFERENCE_DATA_BUCKET_PATH = "inference_data/pymc.nc"
 N_PREDICTION_SAMPLES = 100
 
 app = FastAPI(debug=False)
@@ -57,7 +57,7 @@ class DensityPredictionRequest(BaseModel):
     """Pydantic schema for density requests."""
 
     data: FeatureDataInstance
-    bins: int = Field(10, gt=0)
+    bins: int = Field(5, gt=0)
     algo_param: AlgoParam = AlgoParam()
 
 
