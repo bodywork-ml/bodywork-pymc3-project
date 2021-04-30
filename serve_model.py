@@ -27,23 +27,27 @@ app = FastAPI(debug=False)
 
 class FeatureDataInstance(BaseModel):
     """Pydantic schema for instances of feature data."""
+
     x: float
     category: int
 
 
 class AlgoParam(BaseModel):
     """Pydantic schema for algorithm config."""
+
     n_samples: int = Field(N_PREDICTION_SAMPLES, gt=0)
 
 
 class PointPredictionRequest(BaseModel):
     """Pydantic schema for point-estimate requests."""
+
     data: FeatureDataInstance
     algo_param: AlgoParam = AlgoParam()
 
 
 class IntervalPredictionRequest(BaseModel):
     """Pydantic schema for interval requests."""
+
     data: FeatureDataInstance
     hdi_probability: float = Field(0.95, gt=0, lt=1)
     algo_param: AlgoParam = AlgoParam()
@@ -51,12 +55,13 @@ class IntervalPredictionRequest(BaseModel):
 
 class DensityPredictionRequest(BaseModel):
     """Pydantic schema for density requests."""
+
     data: FeatureDataInstance
     bins: int = Field(10, gt=0)
     algo_param: AlgoParam = AlgoParam()
 
 
-@app.post('/predict/v1.0.0/point', status_code=200)
+@app.post("/predict/v1.0.0/point", status_code=200)
 def predict_point_estimate(request: PointPredictionRequest):
     """Return point-estimate prediction."""
     y_pred_samples = generate_label_samples(
@@ -66,7 +71,7 @@ def predict_point_estimate(request: PointPredictionRequest):
     return {"y_pred": y_pred, "algo_param": request.algo_param.n_samples}
 
 
-@app.post('/predict/v1.0.0/interval', status_code=200)
+@app.post("/predict/v1.0.0/interval", status_code=200)
 def predict_interval(request: IntervalPredictionRequest):
     """Return point-estimate prediction."""
     y_pred_samples = generate_label_samples(
@@ -76,11 +81,11 @@ def predict_interval(request: IntervalPredictionRequest):
     return {
         "y_pred_lower": y_hdi[0],
         "y_pred_upper": y_hdi[1],
-        "algo_param": request.algo_param.n_samples
+        "algo_param": request.algo_param.n_samples,
     }
 
 
-@app.post('/predict/v1.0.0/density', status_code=200)
+@app.post("/predict/v1.0.0/density", status_code=200)
 def predict_density(request: DensityPredictionRequest):
     """Return density prediction."""
     y_pred_samples = generate_label_samples(
@@ -91,9 +96,9 @@ def predict_density(request: DensityPredictionRequest):
     )
     bin_mids = 0.5 * (bin_edges[:-1] + bin_edges[1:])
     return {
-        'y_pred_bin_mids': bin_mids.tolist(),
-        'y_pred_density': y_pred_density.tolist(),
-        "algo_param": request.algo_param.n_samples
+        "y_pred_bin_mids": bin_mids.tolist(),
+        "y_pred_density": y_pred_density.tolist(),
+        "algo_param": request.algo_param.n_samples,
     }
 
 
@@ -105,7 +110,7 @@ def generate_label_samples(x: float, category: int, n_samples) -> np.ndarray:
         model=model,
         samples=n_samples,
         random_seed=42,
-        progressbar=False
+        progressbar=False,
     )
     return posterior_pred["obs"].reshape(-1)
 
@@ -114,7 +119,7 @@ def configure_logger() -> logging.Logger:
     """Configure a logger that will write to stdout."""
     log_handler = logging.StreamHandler(sys.stdout)
     log_format = logging.Formatter(
-        '%(asctime)s - %(levelname)s - %(module)s.%(funcName)s - %(message)s'
+        "%(asctime)s - %(levelname)s - %(module)s.%(funcName)s - %(message)s"
     )
     log_handler.setFormatter(log_format)
     log = logging.getLogger(__name__)
@@ -147,4 +152,4 @@ def get_model_artefacts() -> Tuple[pm.Model, az.InferenceData]:
 if __name__ == "__main__":
     log = configure_logger()
     model, inference_data = get_model_artefacts()
-    uvicorn.run(app, host='0.0.0.0', workers=1)
+    uvicorn.run(app, host="0.0.0.0", workers=1)
