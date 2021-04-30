@@ -14,10 +14,12 @@ stages:
       - numpy==1.20.2
       - pymc3==3.11.2
       - uvicorn==0.13.4
-    # secrets:
-    #   AWS_ACCESS_KEY_ID: aws-credentials
-    #   AWS_SECRET_ACCESS_KEY: aws-credentials
-    #   AWS_DEFAULT_REGION: aws-credentials
+    #### you can comment-out this block ####
+    secrets:
+      AWS_ACCESS_KEY_ID: aws-credentials
+      AWS_SECRET_ACCESS_KEY: aws-credentials
+      AWS_DEFAULT_REGION: aws-credentials
+    ########################################
     cpu_request: 1.0
     memory_request_mb: 500
     service:
