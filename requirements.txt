@@ -1,4 +1,4 @@
-boto3-1.17.60
+botocore==1.20.60
 jupyterlab==3.0.14
 pymc3==3.11.2
 numpy==1.20.2

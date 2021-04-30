@@ -1,19 +1,21 @@
 version: "1.0"
 project:
-  name: bodywork-scikit-fastapi-project
+  name: bodywork-pymc3-project
   docker_image: bodyworkml/bodywork-core:latest
   DAG: scoring-service
 stages:
   scoring-service:
     executable_module_path: serve_model.py
     requirements:
+      - arviz==0.11.2
+      - botocore==1.20.60
       - fastapi==0.63.0
       - joblib==1.0.1
       - numpy==1.20.2
-      - scikit-learn==0.24.1
+      - pymc3==3.11.2
       - uvicorn==0.13.4
-    cpu_request: 0.5
-    memory_request_mb: 100
+    cpu_request: 1.0
+    memory_request_mb: 500
     service:
       max_startup_time_seconds: 30
       replicas: 2
