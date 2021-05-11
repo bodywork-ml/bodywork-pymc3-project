@@ -1,10 +1,10 @@
 # Serving Uncertainty
 
-Most Machine Learning (ML) models return a point-estimate of the most likely data label, given an instance of feature data. There are many scenarios, however, where a point-estimate is not enough - where there is need to understand the model's uncertainty in the prediction. For example, when assessing risk, or more generally, when making decisions to optimise some organisational-level cost (or utility) function. This need is particularly acute when the cost is a non-linear function of the variable you're trying to predict.
+Most Machine Learning (ML) models return a point-estimate of the most likely data label, given an instance of feature data. There are many scenarios, however, where a point-estimate is not enough - where there is a need to understand the model's uncertainty in the prediction. For example, when assessing risk, or more generally, when making decisions to optimise some organisational-level cost (or utility) function. This need is particularly acute when the cost is a non-linear function of the variable you're trying to predict.
 
 For these scenarios, 'traditional' statistical modelling can provide access to the distribution of predicted labels, but these approaches are hard to scale and built upon assumptions that are often invalidated by the data they're trying to model. Alternatively, it is possible to train additional ML models for predicting specific quantiles, through the use of [quantile loss functions](https://towardsdatascience.com/quantile-regression-from-linear-models-to-trees-to-deep-learning-af3738b527c3), but this requires training one new model for every quantile you need to predict, which is inefficient.
 
-Half-way between statistics and ML we have probabilistic programming, rooted in the methods of Bayesian inference. This notebook demonstrates how to train such a predictive model using [PyMC3](https://docs.pymc.io) - a Probabilistic Programming Language (PPL) for Python. We will demonstrate how a single probabilistic program can be used to support requests for point-estimates, arbitrary uncertainty ranges, as well as entire distributions of predicted data labels, for a non-trivial regression task.
+Half-way between statistics and ML we have probabilistic programming, rooted in the methods of Bayesian inference. We demonstrates how to train such a predictive model using [PyMC3](https://docs.pymc.io) - a Probabilistic Programming Language (PPL) for Python. We will demonstrate how a single probabilistic program can be used to support requests for point-estimates, arbitrary uncertainty ranges, as well as entire distributions of predicted data labels, for a non-trivial regression task.
 
 We will then demonstrate how to use [FastAPI](https://fastapi.tiangolo.com) to develop a web API service, that exposes a separate endpoint for each type of prediction request: point, interval and density. Finally, we will walk you through how to deploy the service to Kubernetes, using [Bodywork](https://github.com/bodywork-ml/bodywork-core).
 
@@ -16,7 +16,7 @@ All of the files used in this project can be found in the [bodywork-pymc3-projec
 <img src="https://bodywork-media.s3.eu-west-2.amazonaws.com/bodywork-pymc3-project-lifecycle.png"/>
 </div>
 
-We are going to recommend that the model is trained using the code in the [train_model.ipynb](https://github.com/bodywork-ml/bodywork-pymc3-project/blob/main/train_model.ipynb) notebook, which will persist all ML build artefacts to cloud object storage (AWS S3). We will then use [Bodywork](https://github.com/bodywork-ml/bodywork-core) to deploy the web API defined in the [serve_model.py](https://github.com/bodywork-ml/bodywork-pymc3-project/blob/main/serve_model.py) module, directly from this GitHub repo.
+We are going to recommend that the model is trained using the code in the [train_model.ipynb](https://github.com/bodywork-ml/bodywork-pymc3-project/blob/main/train_model.ipynb) notebook. This will persist all ML build artefacts to cloud object storage (AWS S3). We will then use [Bodywork](https://github.com/bodywork-ml/bodywork-core) to deploy the web API defined in the [serve_model.py](https://github.com/bodywork-ml/bodywork-pymc3-project/blob/main/serve_model.py) module, directly from this GitHub repo.
 
 This process should begin as a manual one, and once confidence in this process is establish, re-training can be automated by using Bodywork to deploy a two-stage train-and-serve pipeline that runs on a schedule - e.g., as demonstrated [here](https://bodywork.readthedocs.io/en/latest/quickstart_ml_pipeline/).
 
@@ -41,7 +41,7 @@ If you're interested in learning more about Bayesian data analysis and inference
 
 ## Running the Project Locally
 
-To be able to run everything discussed below, clone the GitHub repo, create a new virtual environment and install the required packages,
+To be able to run everything discussed below, clone the [bodywork-pymc3-project](https://github.com/bodywork-ml/bodywork-pymc3-project) repo, create a new virtual environment and install the required packages,
 
 ```text
 $ git clone https://github.com/bodywork-ml/bodywork-pymc3-project.git
@@ -61,17 +61,17 @@ Should you want to deploy to a cloud-based cluster in the future, you need only 
 
 A complete Bayesian modelling workflow is covered in-depth and executed within [train_model.ipynb](https://github.com/bodywork-ml/bodywork-pymc3-project/blob/main/train_model.ipynb). We can summarise the steps in this notebook as follows,
 
-### Create an Example Dataset
+### Step 1 - Create an Example Dataset
 
-To aid in building intuition for how Bayesian inference and PPLs work, we will simulate a 'toy' regression dataset using random number generation and then estimate the parameters.
+To aid in building intuition for how Bayesian inference and PPLs work, we will simulate a 'toy' regression dataset using random number generation and then estimate the input parameters using the Bayesian inference model defined in Step 2.
 
-For our synthetic dataset, we will assume that the dependent variable (or labelled data), $\tilde{y}$, is a linear function of a single independent variable (or feature), $x$, whose impact on $\tilde{y}$ depends on a categorical variable (or feature), $c$. We define $x$ is a positive real number and $c$ to belong to one of three categories, that occur with equal likelihood. We express this model mathematically, as follows,
+For our synthetic dataset, we will assume that the dependent variable (or labelled data), $\tilde{y}$, is a linear function of a single independent variable (or feature), $x$, whose impact on $\tilde{y}$ depends on a categorical variable (or feature), $c$. We define $x$ as a positive real number and $c$ to belong to one of three categories, that occur with equal likelihood. We express this model mathematically, as follows,
 
 $$
 \tilde{y} = \beta_{c} \cdot x + \sigma \cdot \tilde{\epsilon}
 $$
 
-where $\tilde{\epsilon} \sim N(0, 1)$, $\sigma$ is the standard deviation of the random noise in the data and $c \in \{0, 1, 2\}$ denotes the category. We start by hard-coding our choices for the model parameters, that we will then try and estimate.
+where $\tilde{\epsilon} \sim N(0, 1)$, $\sigma$ is the standard deviation of the random noise in the data and $c \in \{0, 1, 2\}$ denotes the category. We start by hard-coding our choices for the model parameters.
 
 ```python
 beta_c0 = 1
@@ -86,7 +86,7 @@ We visualise the dataset below.
 <img src="https://bodywork-media.s3.eu-west-2.amazonaws.com/bodywork-pymc3-project-dataset.png"/>
 </div>
 
-### Define and train a Model
+### Step 2 - Define and train a Model
 
 Defining a Bayesian inference model in a PPL like PyMC3, has analogues to defining a DNN model in a tensor computing framework like PyTorch. Perhaps this is not surprising, given that PyMC3 is built upon a tensor computing framework called [Aesara](https://github.com/pymc-devs/aesara). Aesara is a fork of [Theano](https://en.wikipedia.org/wiki/Theano_(software)), a precursor of TensorFlow, PyTorch, etc. The model is defined in the following block,
 
@@ -123,9 +123,20 @@ Training diagnostics are discussed within the notebook, but it is possible to su
 <img src="https://bodywork-media.s3.eu-west-2.amazonaws.com/bodywork-pymc3-project-inference-data.png"/>
 </div>
 
-### Testing the Model
+On the left-hand side, the plot shows the distribution of samples for each parameter in the model. We compute the mean of each distribution as:
 
-The output from the MCMC algorithm allows us to draw samples of the models' parameters. We choose to draw 100 samples of the models' parameters, then use the model and the features from the **test** data, to generate a distribution of data label samples, for each instance of feature data we want to score.
+- `beta_0 = 0.996`
+- `beta_1 = 1.248`
+- `beta_2 = 1.510`
+- `sigma = 0.766`
+
+Which are very close to the original parameters used to generate the dataset (as you'd hope).
+
+On the right-hand side, the same samples are plotted, but in the sequence in which they were generated by the MCMC algorithm (from which we infer that the simulation is 'stable').
+
+### Step 3 - Testing the Model
+
+The output from the MCMC algorithm allows us to draw samples of the models' parameters. We choose to draw 100 samples, which enables us to generate 100 possible predictions for every instance of feature data - i.e., we generate a distribution of predicted data labels, for each instance of feature data we want to score.
 
 Most performance metrics for ML models require a point-estimate of the predicted label, not a distribution. We have chosen to compute the mean (expected) label for every set of predicted label samples, so we can compare a single prediction to the actual value and compute the Mean Absolute Percentage Error (MAPE).
 
@@ -159,8 +170,8 @@ The ultimate aim of this tutorial, is to serve predictions from a probabilistic 
 
 This module loads the trained model that is persisted to cloud object storage when [train_model.ipynb](https://github.com/bodywork-ml/bodywork-pymc3-project/blob/main/train_model.ipynb) is run. Then, it configures [FastAPI](https://fastapi.tiangolo.com) to start a server with HTTP endpoints at:
 
-- **/predict/v1.0.0/point** - for return point-estimates.
-- **/predict/v1.0.0/interval** - for returning highest density intervals.
+- **/predict/v1.0.0/point** - for returning point-estimates.
+- **/predict/v1.0.0/interval** - for returning [highest density intervals](https://en.wikipedia.org/wiki/Credible_interval).
 - **/predict/v1.0.0/density** - for returning the probability density (in discrete bins).
 
 These endpoints are defined in the following functions (refer to [serve_model.py](https://github.com/bodywork-ml/bodywork-pymc3-project/blob/main/serve_model.py) for complete details),
@@ -257,7 +268,7 @@ You can start the service locally using,
 $ python serve_model.py
 ```
 
-And test is using,
+And test it using,
 
 ```text
 $ curl http://localhost:8000/predict/v1.0.0/point \
@@ -314,7 +325,7 @@ Bodywork will interpret this file as follows:
 
 1. Start a Bodywork container on Kubernetes, to run a service stage called `scoring-service`.
 2. Install the Python packages required to run `serve_model.py`.
-3. Mount the AWS credentials contained in the 'aws-credentials' secret, as environment variables accessible to the Python module running in the container. This will automatically configure the AWS client library (boto3) to be able to access your S3 bucket. If you don't need this and simply want to deploy the project from our repo, then you can comment-out the secrets block, as we have the model artefacts stored on publicly accessible S3 buckets that do not require authenticated access. If you want create a secret for your own credentials, then we will cover this below.
+3. Mount the AWS credentials contained in the 'aws-credentials' secret, as environment variables accessible to the Python module running in the container. This will automatically configure the AWS client library (boto3) to be able to access your S3 bucket. If you just want to deploy the project from our repo, then you can comment-out the secrets block, as we have the model artefacts stored on publicly accessible S3 buckets that do not require authenticated access. If you want to create a secret for your own credentials, then we will cover this below.
 4. Run `serve_model.py`.
 5. Monitor  `scoring-service` and ensure that there is always at least one service replica available, at all times - i.e. it if fails for any reason, then immediately start another one.
 
@@ -347,13 +358,15 @@ $ bodywork deployment create \
     --git-repo-branch=main
 ```
 
-Use the kubectl to check if the deployment job has completed,
+Refer to our [guide to monitoring depoyments](https://bodywork.readthedocs.io/en/latest/kubernetes/#monitoring-deployments), or use the following command to check if the deployment job has completed,
 
 ```text
-$ kubectl -n pymc get jobs
+$ bodywork deployment display \
+    --namespace=pymc
+    --name=initial-deployment
 
-NAME              COMPLETIONS   DURATION   AGE
-initial-deployment   1/1           69s        2m
+JOB_NAME              START_TIME                    COMPLETION_TIME               ACTIVE      SUCCEEDED       FAILED
+initial-deployment    2020-12-11 20:21:04+00:00     2020-12-11 20:23:12+00:00     0           1               0
 ```
 
 Once it has completed, test that the service is responding,
@@ -371,4 +384,6 @@ $ curl http://YOU_CLUSTER_IP/pymc/bodywork-pymc3-project--scoring-service/predic
 }
 ```
 
-Returning the same value we got when testing the service locally. Congratulations - you have just deployed a probabilistic program ready for production.
+Returning the same value we got when testing the service locally.
+
+Congratulations - you have just deployed a probabilistic program ready for production!
