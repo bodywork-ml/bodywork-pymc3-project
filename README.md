@@ -1,3 +1,7 @@
+<div align="center">
+<img src="https://bodywork-media.s3.eu-west-2.amazonaws.com/bodywork-pymc3-project-logo.png" width="450"/>
+</div>
+
 # Serving Uncertainty
 
 Most Machine Learning (ML) models return a point-estimate of the most likely data label, given an instance of feature data. There are many scenarios, however, where a point-estimate is not enough - where there is a need to understand the model's uncertainty in the prediction. For example, when assessing risk, or more generally, when making decisions to optimise some organisational-level cost (or utility) function. This need is particularly acute when the cost is a non-linear function of the variable you're trying to predict.
