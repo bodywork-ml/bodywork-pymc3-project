@@ -259,7 +259,6 @@ class DensityPredictionRequest(BaseModel):
     data: FeatureDataInstance
     bins: int = Field(5, gt=0)
     algo_param: AlgoParam = AlgoParam()
-
 ```
 
 For more information on defining JSON schemas using Pydantic and FastAPI, see the [FastAPI docs](https://fastapi.tiangolo.com/tutorial/body/).
@@ -340,7 +339,7 @@ Refer to the [Bodywork User Guide](https://bodywork.readthedocs.io/en/latest/use
 The first thing we need to do, is to create and setup a Kubernetes [namespace](https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/) for our deployment. A namespace can be thought of as a virtual cluster (within the cluster), where related resources can be grouped together. Use the Bodywork CLI to do this,
 
 ```text
-bodywork setup-namespace pymc
+$ bodywork setup-namespace pymc
 ```
 
 If you want inject credentials to access services from your cloud platform, then use (or adapt) the command below. Otherwise, skip this step.
