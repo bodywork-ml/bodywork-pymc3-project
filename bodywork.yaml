@@ -1,7 +1,7 @@
 version: "1.1"
 pipeline:
   name: bodywork-pymc3-project
-  docker_image: bodyworkml/bodywork-core:latest
+  docker_image: bodyworkml/bodywork-core:3.0
   DAG: scoring-service
   secrets_group: dev
 stages:
