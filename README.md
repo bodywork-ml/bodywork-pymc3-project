@@ -57,7 +57,7 @@ $ pip install -r requirements.txt
 
 ### Getting Started with Kubernetes
 
-If you have never worked with Kubernetes before, then please don't stop here. We have written a [Quickstart Guide](https://bodywork.readthedocs.io/en/latest/kubernetes/#quickstart), that will explain the basic concepts and have you up-and-running with a single-node cluster on your loacl machine, in under 10 minutes.
+If you have never worked with Kubernetes before, then please don't stop here. We have written a [Quickstart Guide](https://bodywork.readthedocs.io/en/latest/kubernetes/#quickstart), that will explain the basic concepts and have you up-and-running with a single-node cluster on your local machine, in under 10 minutes.
 
 Should you want to deploy to a cloud-based cluster in the future, you need only to follow the same steps while pointing to your new cluster. This is one of the key advantages of Kubernetes - you can test locally with confidence that your production deployments will behave in the same way.
 
@@ -356,7 +356,7 @@ $ bw create deployment https://github.com/bodywork-ml/bodywork-pymc3-project
 Once it has completed, test that the service is responding,
 
 ```text
-$ curl http://YOU_CLUSTER_IP/bodywork-pymc3-project/scoring-service/predict/v1.0.0/point \
+$ curl http://CLUSTER_IP/bodywork-pymc3-project/scoring-service/predict/v1.0.0/point \
     --request POST \
     --header "Content-Type: application/json" \
     --data '{"data": {"x": 5, "category": 2}}'
