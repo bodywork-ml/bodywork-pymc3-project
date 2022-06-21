@@ -11,7 +11,7 @@ stages:
       - arviz==0.11.2
       - boto3==1.17.60
       - fastapi==0.63.0
-      - joblib==1.0.1
+      - joblib==1.1.0
       - numpy==1.20.2
       - pymc3==3.11.2
       - uvicorn==0.13.4
