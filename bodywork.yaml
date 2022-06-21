@@ -9,6 +9,7 @@ stages:
     executable_module_path: serve_model.py
     requirements:
       - fastapi==0.78.0
+      - uvicorn==0.17.6
       - boto3==1.24.13
       - joblib==1.1.0
       - numpy==1.22.1
