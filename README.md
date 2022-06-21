@@ -55,6 +55,13 @@ $ source .venv/bin/activate
 $ pip install -r requirements.txt
 ```
 
+NOTE - if you're using Apple silicon, then before installing `requirements.txt` you should run,
+
+```text
+brew install hdf5 netcdf
+HDF5_DIR=$(brew --prefix hdf5) pip install netcdf4 --no-binary :all:
+```
+
 ### Getting Started with Kubernetes
 
 If you have never worked with Kubernetes before, then please don't stop here. We have written a [Quickstart Guide](https://bodywork.readthedocs.io/en/latest/kubernetes/#quickstart), that will explain the basic concepts and have you up-and-running with a single-node cluster on your local machine, in under 10 minutes.
@@ -303,21 +310,22 @@ stages:
   scoring-service:
     executable_module_path: serve_model.py
     requirements:
-      - arviz>=0.11.2
-      - boto3>=1.17.60
-      - fastapi>=0.63.0
-      - joblib>=1.0.1
-      - numpy>=1.20.2
-      - pymc3>=3.11.2
-      - uvicorn==0.13.4
+      - fastapi==0.78.0
+      - uvicorn==0.17.6
+      - boto3==1.24.13
+      - joblib==1.1.0
+      - numpy==1.22.1
+      - pymc3==3.11.5
+    #### you can comment-out this block ####
     secrets:
       AWS_ACCESS_KEY_ID: aws-credentials
       AWS_SECRET_ACCESS_KEY: aws-credentials
       AWS_DEFAULT_REGION: aws-credentials
+    ########################################
     cpu_request: 1
-    memory_request_mb: 500
+    memory_request_mb: 750
     service:
-      max_startup_time_seconds: 180
+      max_startup_time_seconds: 120
       replicas: 2
       port: 8000
       ingress: true
