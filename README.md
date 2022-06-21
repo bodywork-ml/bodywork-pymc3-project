@@ -50,14 +50,21 @@ To be able to run everything discussed below, clone the [bodywork-pymc3-project]
 ```text
 $ git clone https://github.com/bodywork-ml/bodywork-pymc3-project.git
 $ cd bodywork-pymc3-project
-$ python3.8 -m venv .venv
+$ python3.9 -m venv .venv
 $ source .venv/bin/activate
 $ pip install -r requirements.txt
 ```
 
+NOTE - if you're using Apple silicon, then before installing `requirements.txt` you should run,
+
+```text
+brew install hdf5 netcdf
+HDF5_DIR=$(brew --prefix hdf5) pip install netcdf4 --no-binary :all:
+```
+
 ### Getting Started with Kubernetes
 
-If you have never worked with Kubernetes before, then please don't stop here. We have written a guide to [Getting Started with Kubernetes for MLOps](https://bodywork.readthedocs.io/en/latest/kubernetes/#getting-started-with-kubernetes), that will explain the basic concepts and have you up-and-running with a single-node cluster on your machine, in under 10 minutes.
+If you have never worked with Kubernetes before, then please don't stop here. We have written a [Quickstart Guide](https://bodywork.readthedocs.io/en/latest/kubernetes/#quickstart), that will explain the basic concepts and have you up-and-running with a single-node cluster on your local machine, in under 10 minutes.
 
 Should you want to deploy to a cloud-based cluster in the future, you need only to follow the same steps while pointing to your new cluster. This is one of the key advantages of Kubernetes - you can test locally with confidence that your production deployments will behave in the same way.
 
@@ -293,30 +300,32 @@ And likewise for the other endpoints.
 All configuration for Bodywork deployments must be kept in a [YAML](https://en.wikipedia.org/wiki/YAML) file, named `bodywork.yaml` and stored in the project’s root directory.  The `bodywork.yaml` required to deploy our web API is reproduced below.
 
 ```yaml
-version: "1.0"
-project:
+version: "1.1"
+pipeline:
   name: bodywork-pymc3-project
-  docker_image: bodyworkml/bodywork-core:latest
+  docker_image: bodyworkml/bodywork-core:3.0
   DAG: scoring-service
+  secrets_group: dev
 stages:
   scoring-service:
     executable_module_path: serve_model.py
     requirements:
-      - arviz==0.11.2
-      - boto3==1.17.60
-      - fastapi==0.63.0
-      - joblib==1.0.1
-      - numpy==1.20.2
-      - pymc3==3.11.2
-      - uvicorn==0.13.4
+      - fastapi==0.78.0
+      - uvicorn==0.17.6
+      - boto3==1.24.13
+      - joblib==1.1.0
+      - numpy==1.22.1
+      - pymc3==3.11.5
+    #### you can comment-out this block ####
     secrets:
       AWS_ACCESS_KEY_ID: aws-credentials
       AWS_SECRET_ACCESS_KEY: aws-credentials
       AWS_DEFAULT_REGION: aws-credentials
-    cpu_request: 1.0
-    memory_request_mb: 500
+    ########################################
+    cpu_request: 1
+    memory_request_mb: 750
     service:
-      max_startup_time_seconds: 60
+      max_startup_time_seconds: 300
       replicas: 1
       port: 8000
       ingress: true
@@ -336,46 +345,26 @@ Refer to the [Bodywork User Guide](https://bodywork.readthedocs.io/en/latest/use
 
 ## Deploying the Prediction Service
 
-The first thing we need to do, is to create and setup a Kubernetes [namespace](https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/) for our deployment. A namespace can be thought of as a virtual cluster (within the cluster), where related resources can be grouped together. Use the Bodywork CLI to do this,
+First of all, if you want inject credentials to access services from your cloud platform, then use (or adapt) the command below. Otherwise, skip this step.
 
 ```text
-$ bodywork setup-namespace pymc
-```
-
-If you want inject credentials to access services from your cloud platform, then use (or adapt) the command below. Otherwise, skip this step.
-
-```text
-$ bodywork secret create \
-    --namespace=pymc \
-    --name=aws-credentials \
-    --data AWS_ACCESS_KEY_ID=XX AWS_SECRET_ACCESS_KEY=XX AWS_DEFAULT_REGION=XX
+$ bw create secret aws-credentials \
+    --secrets-group dev \
+    --data AWS_ACCESS_KEY_ID=XX \
+    --data AWS_SECRET_ACCESS_KEY=XX \
+    --data AWS_DEFAULT_REGION=XX
 ```
 
 Next, execute the deployment using,
 
 ```text
-$ bodywork deployment create \
-    --namespace=pymc \
-    --name=initial-deployment \
-    --git-repo-url=https://github.com/bodywork-ml/bodywork-pymc3-project \
-    --git-repo-branch=main
-```
-
-Refer to our [guide to monitoring depoyments](https://bodywork.readthedocs.io/en/latest/kubernetes/#monitoring-deployments), or use the following command to check if the deployment job has completed,
-
-```text
-$ bodywork deployment display \
-    --namespace=pymc
-    --name=initial-deployment
-
-JOB_NAME              START_TIME                    COMPLETION_TIME               ACTIVE      SUCCEEDED       FAILED
-initial-deployment    2020-12-11 20:21:04+00:00     2020-12-11 20:23:12+00:00     0           1               0
+$ bw create deployment https://github.com/bodywork-ml/bodywork-pymc3-project
 ```
 
 Once it has completed, test that the service is responding,
 
 ```text
-$ curl http://YOU_CLUSTER_IP/pymc/bodywork-pymc3-project--scoring-service/predict/v1.0.0/point \
+$ curl http://CLUSTER_IP/bodywork-pymc3-project/scoring-service/predict/v1.0.0/point \
     --request POST \
     --header "Content-Type: application/json" \
     --data '{"data": {"x": 5, "category": 2}}'
@@ -387,6 +376,6 @@ $ curl http://YOU_CLUSTER_IP/pymc/bodywork-pymc3-project--scoring-service/predic
 }
 ```
 
-Returning the same value we got when testing the service locally.
+See our guide to [accessing services](https://bodywork.readthedocs.io/en/latest/kubernetes/#accessing-services) for information on how to determine `CLUSTER_IP`.
 
 Congratulations - you have just deployed a probabilistic program ready for production!

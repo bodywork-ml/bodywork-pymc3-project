@@ -1,19 +1,19 @@
-version: "1.0"
-project:
+version: "1.1"
+pipeline:
   name: bodywork-pymc3-project
-  docker_image: bodyworkml/bodywork-core:latest
+  docker_image: bodyworkml/bodywork-core:3.0
   DAG: scoring-service
+  secrets_group: dev
 stages:
   scoring-service:
     executable_module_path: serve_model.py
     requirements:
-      - arviz==0.11.2
-      - boto3==1.17.60
-      - fastapi==0.63.0
-      - joblib==1.0.1
-      - numpy==1.20.2
-      - pymc3==3.11.2
-      - uvicorn==0.13.4
+      - fastapi==0.78.0
+      - uvicorn==0.17.6
+      - boto3==1.24.13
+      - joblib==1.1.0
+      - numpy==1.22.1
+      - pymc3==3.11.5
     #### you can comment-out this block ####
     secrets:
       AWS_ACCESS_KEY_ID: aws-credentials
@@ -21,10 +21,10 @@ stages:
       AWS_DEFAULT_REGION: aws-credentials
     ########################################
     cpu_request: 1
-    memory_request_mb: 500
+    memory_request_mb: 750
     service:
-      max_startup_time_seconds: 60
-      replicas: 2
+      max_startup_time_seconds: 300
+      replicas: 1
       port: 8000
       ingress: true
 logging:
