@@ -325,8 +325,8 @@ stages:
     cpu_request: 1
     memory_request_mb: 750
     service:
-      max_startup_time_seconds: 120
-      replicas: 2
+      max_startup_time_seconds: 180
+      replicas: 1
       port: 8000
       ingress: true
 logging:
